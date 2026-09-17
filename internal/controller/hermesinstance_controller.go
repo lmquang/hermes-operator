@@ -556,6 +556,9 @@ func (r *HermesInstanceReconciler) reconcileStatefulSet(ctx context.Context, ins
 		if c := resources.BuildMigrationInitContainer(inst); c != nil {
 			extraInits = append(extraInits, *c)
 		}
+		if c := resources.BuildSkillsInitContainer(inst); c != nil {
+			extraInits = append(extraInits, *c)
+		}
 		desired := resources.BuildStatefulSet(inst, extraInits)
 		if r.Migration != nil {
 			if vol := r.Migration.BuildSourceVolume(inst); vol != nil {
