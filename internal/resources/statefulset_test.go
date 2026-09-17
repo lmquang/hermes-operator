@@ -401,6 +401,46 @@ func TestBuildStatefulSet_WorkspaceVolumeMounted(t *testing.T) {
 	assert.True(t, sawVol, "workspace ConfigMap mounted as volume")
 }
 
+func TestBuildStatefulSet_WorkspaceInitialFilesMountedUnderHermesHome(t *testing.T) {
+	t.Parallel()
+	inst := minimalInstance()
+	inst.Spec.Workspace.InitialFiles = []hermesv1.WorkspaceFile{
+		{Path: "SOUL.md", Content: "you are..."},
+		{Path: "profiles/coder/SOUL.md", Content: "nested"},
+	}
+	sts := BuildStatefulSet(inst, nil)
+	mounts := sts.Spec.Template.Spec.Containers[0].VolumeMounts
+
+	want := map[string]string{
+		"/opt/data/SOUL.md":                "SOUL.md",
+		"/opt/data/profiles/coder/SOUL.md": "profiles__coder__SOUL.md",
+	}
+	for mountPath, subPath := range want {
+		var found *corev1.VolumeMount
+		for i := range mounts {
+			if mounts[i].MountPath == mountPath {
+				found = &mounts[i]
+				break
+			}
+		}
+		require.NotNilf(t, found, "expected a VolumeMount at %s", mountPath)
+		assert.Equal(t, "workspace", found.Name)
+		assert.Equal(t, subPath, found.SubPath)
+		assert.True(t, found.ReadOnly)
+	}
+}
+
+func TestBuildStatefulSet_NoWorkspaceInitialFilesMeansNoExtraMounts(t *testing.T) {
+	t.Parallel()
+	inst := minimalInstance()
+	sts := BuildStatefulSet(inst, nil)
+	for _, m := range sts.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if m.Name == "workspace" {
+			assert.Equal(t, "/home/hermes/.hermes-workspace-seed", m.MountPath)
+		}
+	}
+}
+
 func TestBuildStatefulSet_CABundleConfigMapMounted(t *testing.T) {
 	t.Parallel()
 	inst := minimalInstance()

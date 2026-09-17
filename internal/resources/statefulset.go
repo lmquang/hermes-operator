@@ -2,6 +2,7 @@ package resources
 
 import (
 	"fmt"
+	"path"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -136,6 +137,26 @@ func BuildStatefulSet(inst *hermesv1.HermesInstance, extraInits []corev1.Contain
 		MountPath: "/home/hermes/.hermes-workspace-seed",
 		ReadOnly:  true,
 	})
+
+	// Materialize each spec.workspace.initialFiles entry directly under
+	// HERMES_HOME via a ConfigMap subPath mount, same pattern as the "config"
+	// mount above. Nothing copies the seed mount above into HERMES_HOME (no
+	// init container does this), so without these per-file mounts
+	// spec.workspace.initialFiles is inert. Subpath-mounting straight from the
+	// ConfigMap also means these files always reflect the live HermesInstance
+	// spec on pod (re)start -- a GitOps-managed SOUL.md/HERMES.md is exactly as
+	// current as the last applied CR, not a one-time seed the agent can drift
+	// away from. spec.workspace.initialDirs (mkdir-only entries) still needs a
+	// real init container to write directly to the PVC and is intentionally
+	// out of scope here.
+	for _, f := range inst.Spec.Workspace.InitialFiles {
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      "workspace",
+			MountPath: path.Join("/opt/data", f.Path),
+			SubPath:   EncodeWorkspacePath(f.Path),
+			ReadOnly:  true,
+		})
+	}
 
 	// Prepare CA bundle volume source if configured
 	var caBundleVolumeSource *corev1.VolumeSource
