@@ -305,6 +305,65 @@ kubectl logs <instance>-0 -c init-skills -n <namespace>   # clone output
 kubectl exec <instance>-0 -n <namespace> -- ls /opt/data/skills/
 ```
 
+### Private skill repos
+
+`spec.skills` itself has no credential field yet, so a private remote needs a
+hand-written `initContainer` instead — same idea as `init-skills`, with auth
+added. Both options below use only existing fields (`initContainers`,
+`extraVolumes`), no code change required.
+
+**HTTPS + token:**
+
+```yaml
+spec:
+  initContainers:
+    - name: install-private-skill
+      image: alpine/git:2.47.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          rm -rf /opt/data/skills/my-private-skill
+          git clone --depth 1 "https://${GIT_USER}:${GIT_TOKEN}@github.com/foo/my-private-skill.git" /opt/data/skills/my-private-skill
+      envFrom:
+        - secretRef:
+            name: private-skill-creds   # keys: GIT_USER, GIT_TOKEN
+      volumeMounts:
+        - name: data
+          mountPath: /opt/data
+```
+
+**SSH deploy key:**
+
+```yaml
+spec:
+  extraVolumes:
+    - name: skill-ssh-key
+      secret:
+        secretName: private-skill-ssh-key
+        defaultMode: 0400
+  initContainers:
+    - name: install-private-skill
+      image: alpine/git:2.47.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          export GIT_SSH_COMMAND="ssh -i /etc/skill-ssh/id_ed25519 -o StrictHostKeyChecking=no"
+          rm -rf /opt/data/skills/my-private-skill
+          git clone --depth 1 git@github.com:foo/my-private-skill.git /opt/data/skills/my-private-skill
+      volumeMounts:
+        - name: data
+          mountPath: /opt/data
+        - name: skill-ssh-key
+          mountPath: /etc/skill-ssh
+          readOnly: true
+```
+
+A future `spec.skills[].credentialsRef` could fold this into the declarative
+list instead of a hand-written `initContainer` per private skill; not
+implemented yet.
+
 ## Installing extra toolchains (Go, TypeScript, etc.)
 
 Skills are text (a `SKILL.md` plus supporting files); a language toolchain is
