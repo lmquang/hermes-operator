@@ -13,6 +13,16 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v7
+
+      # GITHUB_TOKEN can only push packages owned by this repo's own account/org
+      # (lowercased: GHCR requires lowercase image names), so resolve the image
+      # ref from the actual repository owner instead of hardcoding one -- a
+      # hardcoded owner here fails the push step on any fork/mirror with
+      # "denied: permission_denied: The requested installation does not exist."
+      - name: Resolve image ref
+        id: img
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hermes-operator" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v4
       # Multi-arch builds for releases happen in release.yaml via
       # docker/build-push-action (uses Go cross-compile under
@@ -29,6 +39,6 @@ jobs:
           context: .
           platforms: linux/amd64
           push: ${{ github.event_name == 'push' }}
-          tags: ghcr.io/paperclipinc/hermes-operator:dev,ghcr.io/paperclipinc/hermes-operator:${{ github.sha }}
+          tags: ${{ steps.img.outputs.image }}:dev,${{ steps.img.outputs.image }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

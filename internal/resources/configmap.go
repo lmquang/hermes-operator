@@ -69,10 +69,24 @@ func BuildConfigMap(inst *hermesv1.HermesInstance, resolvedBody string) *corev1.
 }
 
 // mergeGatewayFragments deep-merges builder-derived gateway config fragments
-// under the top-level `gateways` key of the rendered config.yaml. Gateway
-// fragments win over any user-provided `gateways:` entries because the operator
-// owns this sub-tree (users should disable the gateway and write their own if
-// they need full control).
+// under the top-level `platforms` key of the rendered config.yaml. Gateway
+// fragments win over any user-provided `platforms:` entries for the keys they
+// set because the operator owns this sub-tree (users should disable the
+// gateway and write their own if they need full control) -- a per-platform
+// block is replaced wholesale, not deep-merged, so a user-authored
+// `platforms.<name>.extra.*` alongside an *enabled* typed gateway is dropped;
+// leave that gateway disabled in spec.gateways and rely on spec.config.raw
+// alone if extra.* fields (e.g. Discord's allow_from, which has no typed
+// field or env var yet) are needed.
+//
+// `platforms` (flat, not nested under a `gateway:` wrapper) is what
+// gateway/config_loader.py's merge_platform_layers() actually reads
+// (confirmed against the hermes-agent source at v2026.9.14) -- the previous
+// `gateways` (plural) key here was never a schema hermes-agent recognizes,
+// so every typed spec.gateways.* field silently had no effect on the
+// rendered config (the DISCORD_BOT_TOKEN-style env vars in
+// BuildGatewayEnv were unaffected, since those are read directly by
+// hermes-agent's env-override layer, not through config.yaml at all).
 func mergeGatewayFragments(body string, frags map[string]any) (string, error) {
 	if len(frags) == 0 {
 		return body, nil
@@ -83,14 +97,14 @@ func mergeGatewayFragments(body string, frags map[string]any) (string, error) {
 			return "", fmt.Errorf("parse rendered config: %w", err)
 		}
 	}
-	existing, _ := root["gateways"].(map[string]any)
+	existing, _ := root["platforms"].(map[string]any)
 	if existing == nil {
 		existing = map[string]any{}
 	}
 	for k, v := range frags {
 		existing[k] = v
 	}
-	root["gateways"] = existing
+	root["platforms"] = existing
 	out, err := yaml.Marshal(root)
 	if err != nil {
 		return "", fmt.Errorf("marshal merged config: %w", err)

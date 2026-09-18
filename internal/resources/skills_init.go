@@ -33,13 +33,13 @@ func BuildSkillsInitContainer(inst *hermesv1.HermesInstance) *corev1.Container {
 	for _, s := range inst.Spec.Skills {
 		remote, ref, name := parseSkillSource(s.Source)
 		dest := "/home/hermes/.hermes/skills/" + name
-		script.WriteString(fmt.Sprintf("rm -rf %q\n", dest))
+		fmt.Fprintf(&script, "rm -rf %q\n", dest)
 		if ref != "" {
-			script.WriteString(fmt.Sprintf("git clone --depth 1 --branch %q %q %q\n", ref, remote, dest))
+			fmt.Fprintf(&script, "git clone --depth 1 --branch %q %q %q\n", ref, remote, dest)
 		} else {
-			script.WriteString(fmt.Sprintf("git clone --depth 1 %q %q\n", remote, dest))
+			fmt.Fprintf(&script, "git clone --depth 1 %q %q\n", remote, dest)
 		}
-		script.WriteString(fmt.Sprintf("echo %q >&2\n", "skill installed: "+s.Source+" -> "+dest))
+		fmt.Fprintf(&script, "echo %q >&2\n", "skill installed: "+s.Source+" -> "+dest)
 	}
 
 	return &corev1.Container{

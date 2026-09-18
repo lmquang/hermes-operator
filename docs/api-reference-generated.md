@@ -414,7 +414,7 @@ _Appears in:_
 | `extraVolumeMounts` _[VolumeMount](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#volumemount-v1-core) array_ | ExtraVolumeMounts is a user-supplied list of additional volume mounts<br />applied to the agent container. |  | Optional: \{\} <br /> |
 | `envFrom` _[EnvFromSource](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#envfromsource-v1-core) array_ | EnvFrom is a list of EnvFrom sources (ConfigMap/Secret refs) injected<br />into the agent container. |  | Optional: \{\} <br /> |
 | `env` _[EnvVar](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#envvar-v1-core) array_ | Env is a list of explicit environment variables for the agent container.<br />SSA list-map key is "name" so HermesSelfConfig can merge entries without<br />replacing the whole list. |  | Optional: \{\} <br /> |
-| `skills` _[InstanceSkill](#instanceskill) array_ | Skills is the declarative list of uv-installable skill sources. Plan 3<br />wires the runtime; the field is declared here so SSA from HermesSelfConfig<br />(Plan 4) can target it without a CRD schema change. |  | Optional: \{\} <br /> |
+| `skills` _[InstanceSkill](#instanceskill) array_ | Skills is the declarative list of skill sources to install into<br />~/.hermes/skills/<name>, cloned by an init container on every pod<br />(re)start. Each source is a git remote, optionally suffixed with<br />"@<ref>" (branch/tag/sha); a leading "git+" is accepted and stripped. |  | Optional: \{\} <br /> |
 | `selfConfigure` _[SelfConfigureSpec](#selfconfigurespec)_ | SelfConfigure is the allowlist policy for HermesSelfConfig mutations. |  | Optional: \{\} <br /> |
 | `suspended` _boolean_ | Suspended scales the StatefulSet to zero replicas without deleting state. |  | Optional: \{\} <br /> |
 | `backup` _[BackupSpec](#backupspec)_ | Backup controls scheduled and on-delete PVC snapshot behaviour. |  | Optional: \{\} <br /> |
@@ -589,8 +589,10 @@ _Appears in:_
 
 
 
-InstanceSkill: Plan 3 fills the runtime semantics. The field exists here so
-SSA from HermesSelfConfig (Plan 4) can patch the slice with listMapKey=source.
+InstanceSkill is one entry of HermesInstance.spec.skills; the runtime
+clones it into ~/.hermes/skills/<name> (see BuildSkillsInitContainer). The
+field also stays SSA-compatible so HermesSelfConfig can patch the slice
+with listMapKey=source.
 
 
 
@@ -599,7 +601,7 @@ _Appears in:_
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `source` _string_ | Source is the uv/pip-compatible install source. |  | MinLength: 1 <br /> |
+| `source` _string_ | Source is a git remote, optionally suffixed with "@<ref>". A leading<br />"git+" is accepted and stripped. |  | MinLength: 1 <br /> |
 | `version` _string_ | Version optionally pins the install version. Mirrors SelfConfigSkill.Version<br />so HermesSelfConfig can carry the field through SSA without truncation. |  | Optional: \{\} <br /> |
 
 

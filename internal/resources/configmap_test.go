@@ -23,7 +23,7 @@ func TestBuildConfigMap_EmptyConfig(t *testing.T) {
 	assert.Contains(t, body, "model: gpt-4o-mini")
 	assert.Contains(t, body, "base_url: http://127.0.0.1:9/v1")
 	assert.Contains(t, body, "api_key: placeholder-no-live-calls")
-	assert.NotContains(t, body, "gateways:")
+	assert.NotContains(t, body, "platforms:")
 }
 
 func TestBuildConfigMap_RawBody(t *testing.T) {
@@ -101,7 +101,7 @@ func TestBuildConfigMap_MergesGatewayFragments(t *testing.T) {
 	cm := BuildConfigMap(inst, "")
 	body := cm.Data["config.yaml"]
 	assert.Contains(t, body, "schedules:")
-	assert.Contains(t, body, "gateways:")
+	assert.Contains(t, body, "platforms:")
 	assert.Contains(t, body, "telegram:")
 	assert.Contains(t, body, "webhookURL: https://x/tg")
 }
@@ -124,11 +124,11 @@ func TestBuildConfigMap_UserModelNotOverridden(t *testing.T) {
 	assert.NotContains(t, body, "placeholder-no-live-calls")
 }
 
-func TestBuildConfigMap_NoGatewaysWhenAllDisabled(t *testing.T) {
+func TestBuildConfigMap_NoPlatformsWhenAllDisabled(t *testing.T) {
 	t.Parallel()
 	inst := &hermesv1.HermesInstance{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo", Namespace: "agents"},
 	}
 	cm := BuildConfigMap(inst, "")
-	assert.NotContains(t, cm.Data["config.yaml"], "gateways:")
+	assert.NotContains(t, cm.Data["config.yaml"], "platforms:")
 }
