@@ -1,6 +1,9 @@
 # .github/workflows/agent-image.yaml
 #
-# Builds and publishes ghcr.io/paperclipinc/hermes-agent. The image is
+# Builds and publishes ghcr.io/<repository owner>/hermes-agent (whichever
+# account/org this workflow runs under — GITHUB_TOKEN can only push packages
+# owned by that account, so the image name is resolved from
+# github.repository_owner rather than hardcoded). The image is
 # `FROM nousresearch/hermes-agent` (pinned by digest in the Dockerfile) plus
 # operator metadata, so this workflow re-tags + re-labels + signs the upstream
 # runtime — it does not rebuild a Python env. Triggered:
@@ -45,6 +48,7 @@ jobs:
           bare="${v#v}"
           echo "tag=${v}" >> "$GITHUB_OUTPUT"
           echo "bare=${bare}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/hermes-agent" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -68,8 +72,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/paperclipinc/hermes-agent:${{ steps.ver.outputs.tag }}
-            ghcr.io/paperclipinc/hermes-agent:latest
+            ${{ steps.ver.outputs.image }}:${{ steps.ver.outputs.tag }}
+            ${{ steps.ver.outputs.image }}:latest
           build-args: |
             HERMES_VERSION=${{ steps.ver.outputs.tag }}
           provenance: true
@@ -84,9 +88,10 @@ jobs:
       - name: Sign image (keyless OIDC)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.ver.outputs.image }}
         run: |
           for attempt in 1 2 3 4 5; do
-            if cosign sign --yes "ghcr.io/paperclipinc/hermes-agent@${DIGEST}"; then exit 0; fi
+            if cosign sign --yes "${IMAGE}@${DIGEST}"; then exit 0; fi
             echo "cosign sign attempt ${attempt} failed (likely transient rekor); retrying in $((attempt*20))s..." >&2
             sleep $((attempt*20))
           done
@@ -97,18 +102,19 @@ jobs:
 
       - name: Generate SBOM
         run: |
-          syft "ghcr.io/paperclipinc/hermes-agent:${{ steps.ver.outputs.tag }}" \
+          syft "${{ steps.ver.outputs.image }}:${{ steps.ver.outputs.tag }}" \
             -o spdx-json=sbom.spdx.json
 
       - name: Attach SBOM as Cosign attestation
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE: ${{ steps.ver.outputs.image }}
         run: |
           for attempt in 1 2 3 4 5; do
             if cosign attest --yes \
               --predicate sbom.spdx.json \
               --type spdxjson \
-              "ghcr.io/paperclipinc/hermes-agent@${DIGEST}"; then exit 0; fi
+              "${IMAGE}@${DIGEST}"; then exit 0; fi
             echo "cosign attest attempt ${attempt} failed (likely transient rekor); retrying in $((attempt*20))s..." >&2
             sleep $((attempt*20))
           done
