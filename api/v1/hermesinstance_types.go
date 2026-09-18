@@ -123,9 +123,10 @@ type HermesInstanceSpec struct {
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
 
-	// Skills is the declarative list of uv-installable skill sources. Plan 3
-	// wires the runtime; the field is declared here so SSA from HermesSelfConfig
-	// (Plan 4) can target it without a CRD schema change.
+	// Skills is the declarative list of skill sources to install into
+	// ~/.hermes/skills/<name>, cloned by an init container on every pod
+	// (re)start. Each source is a git remote, optionally suffixed with
+	// "@<ref>" (branch/tag/sha); a leading "git+" is accepted and stripped.
 	// +listType=map
 	// +listMapKey=source
 	// +optional
@@ -873,10 +874,13 @@ type SchedulingSpec struct {
 	RuntimeClassName string `json:"runtimeClassName,omitempty"`
 }
 
-// InstanceSkill: Plan 3 fills the runtime semantics. The field exists here so
-// SSA from HermesSelfConfig (Plan 4) can patch the slice with listMapKey=source.
+// InstanceSkill is one entry of HermesInstance.spec.skills; the runtime
+// clones it into ~/.hermes/skills/<name> (see BuildSkillsInitContainer). The
+// field also stays SSA-compatible so HermesSelfConfig can patch the slice
+// with listMapKey=source.
 type InstanceSkill struct {
-	// Source is the uv/pip-compatible install source.
+	// Source is a git remote, optionally suffixed with "@<ref>". A leading
+	// "git+" is accepted and stripped.
 	// +kubebuilder:validation:MinLength=1
 	Source string `json:"source"`
 

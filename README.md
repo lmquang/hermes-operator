@@ -148,6 +148,8 @@ fields only: explicit values on the instance always win.
 |---|---|---|
 | **Declarative** | Single `HermesInstance` CR drives the whole stack | StatefulSet, Service, PVC, NetworkPolicy, ConfigMap, PDB, HPA, ServiceMonitor, Honcho deploy, backup CronJob: all owned and reconciled. |
 | **Declarative** | `HermesClusterDefaults` for cluster-wide defaults | Defaulting webhook fills `nil` fields only. |
+| **Declarative** | `spec.skills` git-clone install | Each entry cloned into `~/.hermes/skills/<name>` by an init container on every pod (re)start, no custom image needed. See [Skills](#skills). |
+| **Declarative** | `spec.workspace.initialFiles` mounted live | ConfigMap-backed files under `HERMES_HOME`, always reflecting the current spec — good fit for a GitOps-managed `SOUL.md`/`HERMES.md`. See [`docs/api-reference.md`](docs/api-reference.md#specworkspace). |
 | **Adaptive** | `HermesSelfConfig` for audited agent-initiated mutations | SSA under field manager `hermes.agent/selfconfig`. Policy-gated by `spec.selfConfigure.protectedKeys`. |
 | **Adaptive** | OCI-registry-driven auto-update | Channel-pinned polling, pre-update backup, probe-failure rollback. |
 | **Secure** | Default-deny NetworkPolicy + per-gateway allow rules | Derived from `spec.gateways` and `spec.networking.egress`. |
@@ -262,6 +264,159 @@ the instance via the per-field SSA field manager
 shows exactly which fields the agent owns vs. Flux owns vs. you own.
 
 See [`examples/`](examples/) for end-to-end recipes.
+
+## Skills
+
+`spec.skills` declares a list of skills to install; an init container
+`git clone`s each one into `~/.hermes/skills/<name>` on every pod (re)start,
+so a GitOps-managed skill list always matches the running instance — no
+custom image, no rebuild.
+
+```yaml
+spec:
+  skills:
+    - source: "https://github.com/juliusbrussee/caveman"
+    - source: "git+https://github.com/foo/finance-skill@v1.2.0"
+```
+
+- `source` is a git remote. A leading `git+` is accepted and stripped (kept
+  for compatibility with the `HermesSelfConfig.addSkills` examples above,
+  which already use that shape). Append `@<ref>` to pin a branch, tag, or
+  commit; without it, the remote's default branch is used.
+- The installed directory name is the last path segment of the remote, with
+  a trailing `.git` stripped — `.../foo/finance-skill.git` becomes
+  `~/.hermes/skills/finance-skill`.
+- The repo must already be in the shape hermes-agent expects: a `SKILL.md`
+  at its root. This clones the repo verbatim; it does not `pip`/`uv` install
+  anything, despite `spec.skills` covering the same field `HermesSelfConfig`
+  uses to record installs it made at runtime.
+- Because the init container re-clones on every restart, an instance is
+  self-healing but not a place for the agent to durably hand-edit an
+  installed skill's files — those edits are lost on the next pod restart.
+  Use `HermesSelfConfig.addWorkspaceFiles` for agent-authored files that
+  should persist instead.
+- Only public remotes are supported today; there is no per-skill credential
+  field yet.
+
+Verify what actually landed:
+
+```bash
+kubectl logs <instance>-0 -c init-skills -n <namespace>   # clone output
+kubectl exec <instance>-0 -n <namespace> -- ls /opt/data/skills/
+```
+
+### Private skill repos
+
+`spec.skills` itself has no credential field yet, so a private remote needs a
+hand-written `initContainer` instead — same idea as `init-skills`, with auth
+added. Both options below use only existing fields (`initContainers`,
+`extraVolumes`), no code change required.
+
+**HTTPS + token:**
+
+```yaml
+spec:
+  initContainers:
+    - name: install-private-skill
+      image: alpine/git:2.47.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          rm -rf /opt/data/skills/my-private-skill
+          git clone --depth 1 "https://${GIT_USER}:${GIT_TOKEN}@github.com/foo/my-private-skill.git" /opt/data/skills/my-private-skill
+      envFrom:
+        - secretRef:
+            name: private-skill-creds   # keys: GIT_USER, GIT_TOKEN
+      volumeMounts:
+        - name: data
+          mountPath: /opt/data
+```
+
+**SSH deploy key:**
+
+```yaml
+spec:
+  extraVolumes:
+    - name: skill-ssh-key
+      secret:
+        secretName: private-skill-ssh-key
+        defaultMode: 0400
+  initContainers:
+    - name: install-private-skill
+      image: alpine/git:2.47.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          export GIT_SSH_COMMAND="ssh -i /etc/skill-ssh/id_ed25519 -o StrictHostKeyChecking=no"
+          rm -rf /opt/data/skills/my-private-skill
+          git clone --depth 1 git@github.com:foo/my-private-skill.git /opt/data/skills/my-private-skill
+      volumeMounts:
+        - name: data
+          mountPath: /opt/data
+        - name: skill-ssh-key
+          mountPath: /etc/skill-ssh
+          readOnly: true
+```
+
+A future `spec.skills[].credentialsRef` could fold this into the declarative
+list instead of a hand-written `initContainer` per private skill; not
+implemented yet.
+
+## Installing extra toolchains (Go, TypeScript, etc.)
+
+Skills are text (a `SKILL.md` plus supporting files); a language toolchain is
+a binary install and needs a different approach. The upstream hermes-agent
+image already bundles node, ffmpeg, ripgrep, and a browser (see
+[Features](#features)), but anything else — Go, a global npm package like
+`typescript`, additional apt packages — has two options:
+
+**Install once onto the PVC via `spec.initContainers` (no rebuild).** Since
+`/opt/data` is the persistent volume, anything an init container writes there
+survives pod restarts; guard the install with an existence check so it only
+runs once, and extend `PATH` via `spec.env` so the running agent finds it:
+
+```yaml
+spec:
+  initContainers:
+    - name: install-go
+      image: golang:1.23-alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          if [ ! -x /opt/data/toolchains/go/bin/go ]; then
+            mkdir -p /opt/data/toolchains
+            cp -r /usr/local/go /opt/data/toolchains/go
+          fi
+      volumeMounts:
+        - name: data
+          mountPath: /opt/data
+    - name: install-typescript
+      image: ghcr.io/paperclipinc/hermes-agent:v0.16.0   # already has node/npm
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -eu
+          if [ ! -x /opt/data/toolchains/npm-global/bin/tsc ]; then
+            npm install -g typescript --prefix /opt/data/toolchains/npm-global
+          fi
+      volumeMounts:
+        - name: data
+          mountPath: /opt/data
+  env:
+    - name: PATH
+      value: "/opt/data/toolchains/go/bin:/opt/data/toolchains/npm-global/bin:/usr/local/bin:/usr/bin:/bin"
+```
+
+**Build a custom agent image instead** when a toolchain rarely changes and
+you'd rather not depend on network access at pod-start time: `FROM
+ghcr.io/paperclipinc/hermes-agent:<tag>`, install what you need, push to your
+own registry, and point `spec.image.repository`/`tag` (or `digest`) at it.
+More reliable per-start, at the cost of a rebuild every time the toolchain
+needs to change — the opposite tradeoff from the init-container approach
+above.
 
 ## Supported Kubernetes versions
 
