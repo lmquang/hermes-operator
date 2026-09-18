@@ -22,12 +22,15 @@
 # Build arg:
 #   HERMES_VERSION : the upstream release this digest corresponds to. Surfaced as
 #                    the hermes.agent/version label the autoupdate controller reads.
-ARG HERMES_VERSION=v0.16.0
+ARG HERMES_VERSION=v2026.9.14
 
 # Multi-arch (linux/amd64 + linux/arm64) manifest-list digest of
-# nousresearch/hermes-agent:latest (v0.16.0). buildx selects the per-platform
-# image from the list at build time.
-FROM nousresearch/hermes-agent@sha256:be6912a818cb4a479fa384024a599fee6796d56d1e6a5ca56834deec328d9981
+# nousresearch/hermes-agent:v2026.9.14 (Hermes Agent v0.21.3 upstream release).
+# buildx selects the per-platform image from the list at build time. Upstream
+# switched from semver-ish tags (the previous pin, v0.16.0) to dated tags
+# (v2026.M.D) at some point between the two; HERMES_VERSION now matches the
+# actual registry tag so the autoupdate controller's comparison resolves.
+FROM nousresearch/hermes-agent@sha256:99641e57ec762c59e54cb44aa6746b7fc68c18b3c5ddb088af54234c613d9294
 
 ARG HERMES_VERSION
 
