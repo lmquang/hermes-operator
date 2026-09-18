@@ -45,7 +45,7 @@ metadata:
 spec:
   image:
     repository: ghcr.io/paperclipinc/hermes-agent
-    tag: "v0.16.0"
+    tag: "v2026.9.14"
   # Point the gateway at an LLM provider and inject the key via spec.env.
   config:
     raw:
@@ -66,7 +66,7 @@ YAML
 # 3. Watch it converge.
 kubectl get hi -n agents -w
 # NAME        READY   PHASE   IMAGE                                AGE
-# my-hermes   True    Ready   ghcr.io/paperclipinc/hermes-agent:v0.16.0    30s
+# my-hermes   True    Ready   ghcr.io/paperclipinc/hermes-agent:v2026.9.14    30s
 ```
 
 If you omit `spec.config.raw.model`, the operator injects a non-routable placeholder
@@ -394,7 +394,7 @@ spec:
         - name: data
           mountPath: /opt/data
     - name: install-typescript
-      image: ghcr.io/paperclipinc/hermes-agent:v0.16.0   # already has node/npm
+      image: ghcr.io/paperclipinc/hermes-agent:v2026.9.14   # already has node/npm
       command: ["/bin/sh", "-c"]
       args:
         - |
